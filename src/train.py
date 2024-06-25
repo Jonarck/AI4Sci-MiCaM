@@ -26,12 +26,14 @@ def train(args: argparse.Namespace):
     paths = Paths(args)
     tb = SummaryWriter(log_dir=paths.tensorboard_dir)
 
+    # 超参数导入
     model_params = ModelParams(args)
     training_params = TrainingParams(args)
 
     MolGraph.load_operations(paths.operation_path)
-    MolGraph.load_vocab(paths.vocab_path)
+    MolGraph.load_vocab(paths.vocab_path) # 这里需要注意
 
+    # log设置
     os.makedirs(paths.output_dir)
     log_file = path.join(paths.output_dir, "train.log")
     print(f"See {log_file} for log." )
@@ -42,30 +44,40 @@ def train(args: argparse.Namespace):
         level = logging.INFO
     )
 
+    # 模型定义与初始化
     model = MiCaM(model_params).cuda()
+
+    # 优化器初始化
     optimizer = optim.Adam(model.parameters(), lr=training_params.lr)
 
+    # 超参数设置
     total_step, beta = 0, training_params.beta_min
 
+    # log记录
     logging.info("HyperParameters:")
     logging.info(model_params)
     logging.info(training_params)
 
+    # 训练
     scheduler = lr_scheduler.ExponentialLR(optimizer, training_params.lr_anneal_rate)
     beta_scheduler = beta_annealing_schedule(params=training_params, init_beta=beta, init_step=total_step)
-    train_dataset = MolsDataset(paths.train_processed_dir)
+    train_dataset = MolsDataset(paths.train_processed_dir) # 只导入了训练数据
 
     logging.info(f"Begin training...")
     os.makedirs(paths.model_save_dir)
     stop_train = False
     while True:
-        for input in DataLoader(dataset=train_dataset, batch_size=training_params.batch_size, shuffle=True, collate_fn=batch_collate):
+        for input in DataLoader(dataset=train_dataset, batch_size=training_params.batch_size, shuffle=True, collate_fn=batch_collate): # 【数据导入】发生
             total_step += 1
             model.zero_grad()
 
+# collate_fn决定输入数据的形式
             input = input.cuda()
+
+# model决定输入的转化：调用forward()函数
             output: VAE_Output = model(input, beta=beta, prop_weight=training_params.prop_weight)
 
+# 反向传播
             output.total_loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), training_params.grad_clip_norm)
             
@@ -85,23 +97,28 @@ def train(args: argparse.Namespace):
                 break
         
         if stop_train: break
-            
+
+# 保存结果与benchmark测试
+
     model.eval()
     model.zero_grad()
     torch.cuda.empty_cache()
+
+    # 保存模型和motif的嵌入表示
     model_path = path.join(paths.model_save_dir,"model.ckpt")
     motifs_embed_path = path.join(paths.model_save_dir,"motifs_embed.ckpt" )
     with torch.no_grad():
         ckpt = (model.state_dict(), optimizer.state_dict(), total_step, beta)
         torch.save(ckpt, model_path)
         model.save_motifs_embed(motifs_embed_path)
-    
+
+    # bencmark测试
     logging.info(f"Benchmarking...")
     with torch.no_grad():
         model.load_state_dict(torch.load(model_path)[0])
         model.load_motifs_embed(motifs_embed_path)
-        benchmark_results = model.benchmark(train_path=paths.train_path)
-        logging.info(benchmark_results)
+        benchmark_results = model.benchmark(train_path=paths.train_path) # 在"train.smiles"上使用benchmark
+        logging.info(benchmark_results) # 记录结果
     tb.close()
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class DecoderState(object):
         batch_idx: int,
         return_trace: bool = False
     ):
-        self.latent_repr = latent_repr
+        self.latent_repr = latent_repr # z in the route
         self.batch_idx = batch_idx
 
         self.current_graph: nx.Graph = nx.Graph()
@@ -32,19 +32,30 @@ class DecoderState(object):
 
         self.decode_step: int = 0
 
-    def merge_atoms(self, atom1: int, atom2: int) -> None:
+    '''
+    将atom1和atom2两个连接点原子合并
+    '''
+    def merge_atoms(self, atom1: int, atom2: int) -> None: # Optimization
+        #当前图状态
         graph = self.current_graph
+        #移出可连接点（虚原子）列表
         self.connections_list.remove(atom1)
         self.connections_list.remove(atom2)
+        #移除原子顺序词典
         self.atoms_step_dict.pop(atom1)
         self.atoms_step_dict.pop(atom2)
+        #虚拟键相同时才能合并
         assert graph.nodes[atom1]['dummy_bond_type'] == graph.nodes[atom2]['dummy_bond_type']
+        #获取此次选中的可连接点原子的虚拟键类型
         bond_type = graph.nodes[atom1]['dummy_bond_type']
+        #获
         anchor1 = list(graph.neighbors(atom1))[0]
         anchor2 = list(graph.neighbors(atom2))[0]
+        #加边→设置边类型为虚拟键类型→【【在共价键词典中获取该共价键标签】】
         graph.add_edge(anchor1, anchor2)
         graph[anchor1][anchor2]['bondtype'] = bond_type
         graph[anchor1][anchor2]['label'] = BOND_VOCAB[bond_type]
+        # 移除被合并的原子
         graph.remove_node(atom1)
         graph.remove_node(atom2)
 
@@ -55,7 +66,9 @@ class DecoderState(object):
         for key, value in self.atoms_step_dict.items():
             new_step_dict[mapping[key]] = value
         self.atoms_step_dict = new_step_dict
-    
+    '''
+    合并后的状态更新和跟踪信息的记录
+    '''
     def state_update(self) -> None:
         if len(self.connections_list) == 0:
             self.non_terminal = False
@@ -66,6 +79,9 @@ class DecoderState(object):
         if self.trace is not None:
             self.trace.append(mol_graph2smiles(self.current_graph, postprocessing=False))
 
+    '''
+    情况一：链接新motif，为下一步合并操作引入新的motif到当前图中，并执行合并和状态更新操作
+    '''
     def add_motif(self, motif_smiles: str, connection_order: Optional[int] = None) -> None:
         self.decode_step += 1
 
@@ -85,10 +101,14 @@ class DecoderState(object):
         self.connections_list = self.connections_list + new_conn_list
         self.current_graph = nx.union(self.current_graph, motif_graph)
 
+
         if connection_order is not None:
             self.merge_atoms(self.connections_list[0], connection_idx)
         self.state_update()
-    
+
+    '''
+    情况二：成环连接，在当前图中，并执行合并和状态更新操作
+    '''
     def cyclize(self, connection_idx) -> None:
         self.decode_step += 1
         self.merge_atoms(self.query_atom, connection_idx)
@@ -224,6 +244,7 @@ class Decoder(nn.Module):
         self.motif_node_embed, self.motif_graph_embed = torch.load(file)
         self.motif_node_embed, self.motif_graph_embed = self.motif_node_embed.cuda(), self.motif_graph_embed.cuda()
 
+    # Start
     def pick_fisrt_motifs_for_batch(
         self,
         latent_reprs: torch.Tensor,
@@ -242,6 +263,7 @@ class Decoder(nn.Module):
         
         return decoder_states
 
+    # Midtime connect
     def connection_query_step(
         self,
         query: torch.Tensor,

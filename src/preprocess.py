@@ -7,7 +7,7 @@ from make_training_data import make_trainig_data
 from merging_operation_learning import merging_operation_learning
 from model.mol_graph import MolGraph
 from model.mydataclass import Paths
-from motif_vocab_construction import motif_vocab_construction
+from motif_vocab_construction import Operation_based_motif_vocab_construction
 
 if __name__ == "__main__":
 
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     MolGraph.load_operations(paths.operation_path, args.num_operations)
 
     if not path.exists(paths.vocab_path):
-        motif_vocab_construction(
+        Operation_based_motif_vocab_construction(
             train_path = paths.train_path,
             vocab_path = paths.vocab_path,
             operation_path = paths.operation_path,

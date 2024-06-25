@@ -6,7 +6,7 @@ from torch_geometric.data import Data
 
 from model.mol_graph import ATOM_FEATURES
 
-class Atom_Embedding(nn.Module):
+class Atom_Embedding(nn.Module): ## Atom contex
     def __init__(self,
         atom_embed_size: List[int]
     ) -> None:

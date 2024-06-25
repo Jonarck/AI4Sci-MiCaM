@@ -57,6 +57,8 @@ class MolGraph:
                 update_stats_producer(self, graph_before_merge, new_graph, node1, node2, q, self.idx)
         q.put((motif, self.idx, new_graph))
 
+# 1. 基础功能
+# 1）导入
 def load_batch_mols(batch: List[Tuple[int, str]]) -> List[MolGraph]:
     return [MolGraph(smi, idx) for (idx, smi) in batch]
 
@@ -64,21 +66,23 @@ def load_mols(train_path: str, num_workers: int) -> List[MolGraph]:
     print(f"[{datetime.now()}] Loading molecules...")
     smiles_list = [smi.strip("\n") for smi in open(train_path)]
     smiles_list = [(i, smi) for (i, smi) in enumerate(smiles_list)]
-    
+
     batch_size = (len(smiles_list) - 1) // num_workers + 1
     batches = [smiles_list[i : i + batch_size] for i in range(0, len(smiles_list), batch_size)]
     mols: List[MolGraph]= []
     with mp.Pool(num_workers) as pool:
-        for mols_batch in pool.imap(load_batch_mols, batches):
+        for mols_batch in pool .imap(load_batch_mols, batches):  # 调用load_batch_mols
             mols.extend(mols_batch)
 
     print(f"[{datetime.now()}] Loading molecules finished. Total: {len(mols)} molecules.\n")
     return mols
 
+# 2) 片段转成smiles
 def fragment2smiles(mol: MolGraph, indices: List[int]) -> str:
     smiles = Chem.MolFragmentToSmiles(mol.mol_graph, tuple(indices))
     return Chem.MolToSmiles(Chem.MolFromSmiles(smiles, sanitize=False))
 
+# 2）图的节点合并操作
 def merge_nodes(graph: nx.Graph, node1: int, node2: int) -> None:
     neighbors = [n for n in graph.neighbors(node2)]
     atom_indices = graph.nodes[node1]["atom_indices"].union(graph.nodes[node2]["atom_indices"])
@@ -89,6 +93,8 @@ def merge_nodes(graph: nx.Graph, node1: int, node2: int) -> None:
     graph.remove_node(node2)
     graph.nodes[node1]["atom_indices"] = atom_indices
 
+# 2. 统计功能
+# 1）获取统计信息——生产者消费者模式
 def get_stats_producer(batch: List[MolGraph], q: Queue):
     for mol in batch:
         for (node1, node2) in mol.merging_graph.edges:
@@ -131,6 +137,7 @@ def get_stats(mols: List[MolGraph], num_workers: int) -> Tuple[Dict[str, int], D
         [p.join() for p in producers]
     return stats, indices
 
+# 2）更新统计信息——生产者消费者模式
 def update_stats(mol: MolGraph, graph: nx.Graph, new_graph: nx.Graph, node1: int, node2: int, stats: Dict[str, int], indices: Dict[str, Dict[int, int]], i: int):
     neighbors1 = [n for n in graph.neighbors(node1)]
     for n in neighbors1:
@@ -172,6 +179,7 @@ def update_stats_producer(mol: MolGraph, graph: nx.Graph, new_graph: nx.Graph, n
         motif_smiles = fragment2smiles(mol, atom_indices)
         q.put((motif_smiles, i, 1))
 
+# 3. 合并操作——生产者消费者模式
 def apply_merging_operation_producer(motif: str, batch: List[MolGraph], q: Queue):
     [mol.apply_merging_operation_producer(motif, q) for mol in batch]
     q.put(None)
@@ -214,6 +222,7 @@ def apply_merging_operation(
         [mol.apply_merging_operation(motif, stats, indices) for mol in mols_to_process]
     stats[motif] = 0
 
+# 4. 合并操作学习算法
 def merging_operation_learning(
     train_path: str,
     operation_path: str,
