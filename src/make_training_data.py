@@ -5,7 +5,8 @@ import pickle
 from datetime import datetime
 from functools import partial
 from typing import List, Tuple
-
+import shutil
+import random
 import torch
 from tqdm import tqdm
 
@@ -16,22 +17,65 @@ from model.mydataclass import Paths
 
 def process_train_batch(batch: List[str], raw_dir: str, save_dir: str):
     pos = mp.current_process()._identity[0]
-    with tqdm(total = len(batch), desc=f"Processing {pos}", position=pos-1, ncols=80, leave=False) as pbar:
+    with tqdm(total=len(batch), desc=f"Processing {pos}", position=pos-1, ncols=80, leave=False) as pbar:
         for file in batch:
-            with open(path.join(raw_dir, file), "rb") as f:
-                mol: MolGraph = pickle.load(f) # 训练数据在motif_vocab构建过程中就已经完成了【MolGraph对象化处理】：已经将每一行smiles对应的分子构建为MolGraph对象，并保存为了二进制文件
-            data = mol.get_data() # 调用get_data：为batch中的每个【MolGraph对象】构建训练数据，训练数据中的【“查询拼接过程”子图data对象】表现了生成过程
-            torch.save(data, path.join(save_dir, file.split()[0]+".pth"))# 用【原始文件名{idx}.pkl去掉pkl后的idx】作为文件保存
+            try:
+                with open(path.join(raw_dir, file), "rb") as f:
+                    mol: MolGraph = pickle.load(f)
+                data = mol.get_data()
+                torch.save(data, path.join(save_dir, file.split()[0] + ".pth"))
+            except (EOFError, pickle.UnpicklingError) as e:
+                print(f"Error reading file {file}: {e}")
             pbar.update()
 
-def process_valid_batch(batch: List[Tuple[int, str]], save_dir: str):
-    pos = mp.current_process()._identity[0]
-    with tqdm(total = len(batch), desc=f"Processing {pos}", position=pos-1, ncols=80, leave=False) as pbar:
-        for idx, smi in batch:
-            mol = MolGraph(smi, tokenizer="motif", methods = ?) # 测试数据需要完成【MolGraph对象化处理】，调用MolGraph的过程涉及motif拆分方法（merging_graph构建方法）的选择
 
-            data = mol.get_data() # 调用get_data：为batch中的每个【MolGraph对象】构建训练数据，训练数据中的【“查询拼接过程”子图data对象】表现了生成过程
-            torch.save(data, path.join(save_dir, f"{idx}.pth")) # 用【该分子在valid.smiles文件中的标号】作为文件名保存
+def process_valid_batch(batch: List[Tuple[int, str]], save_dir: str, method: str = 'ensemble', data_ensemble_mode: str = 'random'):
+    """
+    处理valid数据的MolGraph对象化并保存到指定目录
+    :param batch: 包含SMILES字符串的batch
+    :param save_dir: 保存MolGraph对象的目录
+    :param method: Vocab构建的方法选择, 默认是ensemble
+    :param data_ensemble_mode: 数据集成模式, 默认是random
+    """
+    # 清空save_dir里的所有文件
+    # if path.exists(save_dir):
+    #     shutil.rmtree(save_dir)
+    # os.makedirs(save_dir, exist_ok=True)
+
+    pos = mp.current_process()._identity[0]
+    with tqdm(total=len(batch), desc=f"Processing {pos}", position=pos-1, ncols=80, leave=False) as pbar:
+        offset = len(batch)
+        for idx, smi in batch:
+            if method == 'frequency_based_only':
+                mol = MolGraph(smi, tokenizer="motif", methods="frequency_based")
+                data = mol.get_data()
+                torch.save(data, path.join(save_dir, f"{idx}.pth"))
+            elif method == 'connectivity_based_only':
+                mol = MolGraph(smi, tokenizer="motif", methods="connectivity_based")
+                data = mol.get_data()
+                torch.save(data, path.join(save_dir, f"{idx}.pth"))
+            elif method == 'ensemble':
+                if data_ensemble_mode == 'overlay':
+                    # 处理 frequency_based 方法
+                    mol_freq = MolGraph(smi, tokenizer="motif", methods="frequency_based")
+                    data_freq = mol_freq.get_data()
+                    torch.save(data_freq, path.join(save_dir, f"{idx}.pth"))
+
+                    # 处理 connectivity_based 方法
+                    mol_conn = MolGraph(smi, tokenizer="motif", methods="connectivity_based")
+                    data_conn = mol_conn.get_data()
+                    torch.save(data_conn, path.join(save_dir, f"{idx + offset}.pth"))
+                elif data_ensemble_mode == 'random':
+                    if random.random() < 0.9:
+                        mol = MolGraph(smi, tokenizer="motif", methods="frequency_based")
+                    else:
+                        mol = MolGraph(smi, tokenizer="motif", methods="connectivity_based")
+                    data = mol.get_data()
+                    torch.save(data, path.join(save_dir, f"{idx}.pth"))
+                else:
+                    raise ValueError("Invalid data_ensemble_mode. Choose 'overlay' or 'random'.")
+            else:
+                raise ValueError("Invalid methods. Choose 'frequency_based_only', 'connectivity_based_only' or 'ensemble'.")
             pbar.update()
 
 def make_trainig_data(
@@ -42,40 +86,40 @@ def make_trainig_data(
     valid_processed_dir: str,
     vocab_processed_path: str,
     num_workers: int,
+    methods,
 ):
 
     print(f"[{datetime.now()}] Preprocessing traing data.")
     print(f"Number of workers: {num_workers}. Total number of CPUs: {mp.cpu_count()}.\n")
 
-# 1. 生成训练数据：数据预处理+自回归数据标注
+
     print(f"[{datetime.now()}] Loading training set from {mols_pkl_dir}.\n")
     os.makedirs(train_processed_dir, exist_ok=True)
-    # 训练数据集：训练数据在motif_vocab构建过程中就已经完成了【列表化加载】，并且对列表完成了【MolGraph对象化处理】：已经将每一行smiles对应的分子构建为MolGraph对象，并保存为了二进制文件
-    data_set = os.listdir(mols_pkl_dir) # 使用 os.listdir 列出原始数据目录 mols_pkl_dir 中的所有文件名，得到 data_set。
+    data_set = os.listdir(mols_pkl_dir)
     batch_size = (len(data_set) - 1) // num_workers + 1
     batches = [data_set[i : i + batch_size] for i in range(0, len(data_set), batch_size)]
-    # 多线程调用process_train_batch处理mols_pkl_dir
     func = partial(process_train_batch, raw_dir=mols_pkl_dir, save_dir=train_processed_dir)
     with mp.Pool(num_workers, initializer=tqdm.set_lock, initargs=(mp.RLock(),)) as pool:
         pool.map(func, batches)
-
-# 2. 生成测试数据：数据预处理+自回归数据标注
+    
+    
     print(f"[{datetime.now()}] Preprocessing valid set from {valid_path}.\n")
+    # 清空valid_processed_dir里的所有文件
+    if path.exists(valid_processed_dir):
+        shutil.rmtree(valid_processed_dir)
     os.makedirs(valid_processed_dir, exist_ok=True)
-    # 测试数据集：测试数据集导入原始的valid.smiles以完成【列表化加载】
-    data_set = [(idx, smi.strip("\n")) for idx, smi in enumerate(open(valid_path))] #【smiles文件→[第一个barch[(id_1,SMILES_1),...,(id_batch_size,SMILES_batch_size)],...,第n个batch]】
+    data_set = [(idx, smi.strip("\n")) for idx, smi in enumerate(open(valid_path))]
     batch_size = (len(data_set) - 1) // num_workers + 1
     batches = [data_set[i : i + batch_size] for i in range(0, len(data_set), batch_size)]
-    # 多线程调用process_valid_batch处理mols_pkl_dir
-    func = partial(process_valid_batch, save_dir=valid_processed_dir)
+    # edit valid form by changing "methods" and "data_ensemble_mode"
+    func = partial(process_valid_batch, save_dir=valid_processed_dir, method=methods, data_ensemble_mode='random')
     with mp.Pool(num_workers, initializer=tqdm.set_lock, initargs=(mp.RLock(),)) as pool:
         pool.map(func, batches)
 
-# 3. 为训练专门处理Motif词典
     print(f"[{datetime.now()}] Preprocessing motif vocabulary from {vocab_path}.\n")
     vocab_data = MolGraph.preprocess_vocab()
     with open(vocab_processed_path, "wb") as f:
-        torch.save(vocab_data, f) # 保存到 vocab.pth
+        torch.save(vocab_data, f)
 
     print(f"[{datetime.now()}] Preprocessing finished.\n\n")
 
@@ -83,17 +127,19 @@ if __name__ == "__main__":
 
     args = parse_arguments()
     paths  = Paths(args)
-
-    MolGraph.load_operations(paths.operation_path, args.num_operations) # 导入操作集
-
-    MolGraph.load_vocab(paths.vocab_path) # 调用类方法load_vocab()
+    
+    method = args.method
+    if not method == "connectivity_based_only":
+        MolGraph.load_operations(paths.operation_path, args.num_operations)
+    MolGraph.load_vocab(paths.vocab_path)
 
     make_trainig_data(
-        mols_pkl_dir = paths.mols_pkl_dir, # 构造训练数据的时候需要用到mols存储对象！
+        mols_pkl_dir = paths.mols_pkl_dir,
         valid_path = paths.valid_path,
         vocab_path = paths.vocab_path,
         train_processed_dir = paths.train_processed_dir,
         valid_processed_dir = paths.valid_processed_dir,
         vocab_processed_path = paths.vocab_processed_path,
         num_workers = args.num_workers,
+        methods = args.method,
     )

@@ -25,18 +25,21 @@ class QuickBenchGenerator(DistributionMatchingGenerator):
         all_molecules: List[str] = []
 
         iter = 0
+        print(f"Starting molecule generation: target {number_samples} unique molecules with max {max_samples} total samples.")
         while number_unique_molecules < number_samples and number_already_sampled < max_samples:
             iter += 1
             remaining_to_sample = number_samples - number_unique_molecules
+            print(f"Iteration {iter}: need {remaining_to_sample} more unique molecules.")
             samples = generator.generate(number_samples=remaining_to_sample)
             number_already_sampled += remaining_to_sample
+            print(f"Generated {len(samples)} samples. Total samples tried: {number_already_sampled}.")
             for m in samples:
                 if is_valid(m):
                     if m not in unique_molecules:
                         unique_molecules.append(m)
                         number_unique_molecules += 1
             all_molecules += samples
-        
+            print(f"Current unique molecules count: {number_unique_molecules}.")
         assert len(unique_molecules) >= number_samples
 
         self.molecules = all_molecules
@@ -57,13 +60,16 @@ class QuickBenchmark(object):
         self.novel_bench = NoveltyBenchmark(number_samples=num_samples, training_set=training_set)
         self.kl_bench = KLDivBenchmark(number_samples=num_samples, training_set=training_set)
         self.fcd_bench = FrechetBenchmark(training_set=training_set, sample_size=num_samples)
-    
+        #self.fcd_bench = 0
     def assess_model(self, generator):
         quickbenchgenerator = QuickBenchGenerator(generator)
         valid_result = self.valid_bench.assess_model(quickbenchgenerator)
         uniq_result = self.uniq_bench.assess_model(quickbenchgenerator)
         novel_result = self.novel_bench.assess_model(quickbenchgenerator)
         kl_result = self.kl_bench.assess_model(quickbenchgenerator)
+        import torch, gc
+        gc.collect()
+        torch.cuda.empty_cache()
         fcd_result = self.fcd_bench.assess_model(quickbenchgenerator)
         return BenchmarkResults(
             validity = valid_result,

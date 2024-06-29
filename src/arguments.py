@@ -6,10 +6,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     # Paths
-    parser.add_argument('--data_dir', type=str, default='data\\')
-    parser.add_argument('--preprocess_dir', default='preprocess\\')
-    parser.add_argument('--output_dir', type=str, default='output\\')
-    parser.add_argument('--tensorboard_dir', type=str, default='tensorboard\\')
+    parser.add_argument('--data_dir', type=str, default='data/')
+    parser.add_argument('--preprocess_dir', default='preprocess/')
+    parser.add_argument('--output_dir', type=str, default='output/')
+    parser.add_argument('--tensorboard_dir', type=str, default='tensorboard/')
 
     parser.add_argument('--dataset', type=str, default="QM9")
     parser.add_argument('--job_name', type=str, default="")
@@ -17,7 +17,14 @@ def parse_arguments():
     parser.add_argument('--generate_path', type=str, default="samples")
 
     # Method selection
-    parser.add_argument('--method', type=str, choices=['frequency_based', 'connectivity_based'])
+    parser.add_argument('--method', type=str, choices=['frequency_based_only', 'connectivity_based_only','ensemble'], default='ensemble')
+
+    # benchmark on existed models
+    parser.add_argument('--choosed_output_dir', type=str, default=None, help='Directory to load the model and save benchmark log')
+    parser.add_argument('--benchmark_only', choices=['0', '1'], default=0)
+
+    # Data Ensemble Mode：default='random'
+    parser.add_argument('--data_ensemble_mode', choices=['overlay', 'random'], default='random',                        help='Mode to ensemble data')
 
     # hyperparameters
     ## common
@@ -25,12 +32,11 @@ def parse_arguments():
     parser.add_argument('--cuda', type=int, default=0)
     parser.add_argument('--seed', type=int, default=2)
 
+    ## merging operation learning, motif vocab construction
     parser.add_argument('--num_operations', type=int, default=500)
     parser.add_argument('--num_iters', type=int, default=3000)
-
     parser.add_argument('--min_frequency', type=int, default=0)
     parser.add_argument('--mp_thd', type=int, default=1e5)
-
 
     ## networks
     parser.add_argument('--hidden_size', type=int, default=256)
@@ -58,9 +64,9 @@ def parse_arguments():
     parser.add_argument('--beta_max', type=float, default=0.6)
     parser.add_argument('--beta_anneal_period', type=int, default=20000)
     parser.add_argument('--prop_weight', type=float, default=0.5)
-
+    
     # inference
     parser.add_argument('--num_sample', type=int, default=10000)
-
+    
     args = parser.parse_args()
     return args

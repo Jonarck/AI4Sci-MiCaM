@@ -61,8 +61,12 @@ class Paths:
     train_path: str
     valid_path: str
     operation_path: str
-    vocab_path: str
-    mols_pkl_dir: str
+    freq_vocab_path: str # vocab constructed by frequency_based_motif_vocab_construction()
+    conn_vocab_path: str # vocab constructed by connectivity_based_motif_vocab_construction()
+    vocab_path: str # 统一的工作区，调用时统一从此处调用
+    freq_mols_pkl_dir: str # Train.smiles -> MolGraph(.pkl) set by frequency_based_motif_vocab_construction()
+    conn_mols_pkl_dir: str # Train.smiles -> MolGraph(.pkl) set by connectivity_based_motif_vocab_construction()
+    mols_pkl_dir: str # 统一的工作区，调用时统一从此处调用
     train_processed_dir: str
     valid_processed_dir: str
     vocab_processed_path: str
@@ -81,20 +85,50 @@ class Paths:
         self.train_path = path.join(self.data_dir, "train.smiles")
         self.valid_path = path.join(self.data_dir, "valid.smiles")
 
-        self.preprocess_dir = path.join(self.preprocess_dir, args.dataset)
-       
-        self.operation_path = path.join(self.preprocess_dir, "merging_operation.txt")
-        self.preprocess_dir = path.join(self.preprocess_dir, f"num_ops_{args.num_operations}")
+# preprocess_dir set
+        self.preprocess_dir = path.join(self.preprocess_dir, args.dataset) # by dataset
+        self.preprocess_dir = path.join(self.preprocess_dir, f"{args.method}") # by method
+
+        if args.method == "frequency_based_only":
+            self.operation_path = path.join(self.preprocess_dir, "merging_operation.txt") # 所以merging_peration_learning.py需要传参
+            self.preprocess_dir = path.join(self.preprocess_dir, f"num_ops_{args.num_operations}")
+        if args.method == "ensemble":
+            self.operation_path = path.join(self.preprocess_dir, "merging_operation.txt")
+            self.preprocess_dir = path.join(self.preprocess_dir, f"ensemble_with_num_ops_{args.num_operations}_freq_based")
+
+
+# When construct vocab:
+        '''
+        [Origin]:
         self.vocab_path = path.join(self.preprocess_dir, "vocab.txt")
         self.mols_pkl_dir = path.join(self.preprocess_dir, "mol_graphs")
+        '''
+        # vocab constructed by frequency_based_motif_vocab_construction()
+        self.freq_vocab_path = path.join(self.preprocess_dir, "freq_vocab.txt")
+        # vocab constructed by connectivity_based_motif_vocab_construction()
+        self.conn_vocab_path = path.join(self.preprocess_dir, "conn_vocab.txt")
+        # 统一的工作区，调用时统一从此处调用
+        self.vocab_path = path.join(self.preprocess_dir, "vocab.txt")
+
+        # Train.smiles -> MolGraph(.pkl) set by frequency_based_motif_vocab_construction()
+        self.freq_mols_pkl_dir = path.join(self.preprocess_dir, "freq_mol_graphs_of_train")
+        # Train.smiles -> MolGraph(.pkl) set by connectivity_based_motif_vocab_construction()
+        self.conn_mols_pkl_dir = path.join(self.preprocess_dir, "conn_mol_graphs_of_train")
+        # 统一的工作区，调用时统一从此处调用
+        self.mols_pkl_dir = path.join(self.preprocess_dir, "mol_graphs")
+
+# When make training data:
         self.train_processed_dir = path.join(self.preprocess_dir, "train")
         self.valid_processed_dir = path.join(self.preprocess_dir, "valid")
+        
+        # process on mix vocab 
         self.vocab_processed_path = path.join(self.preprocess_dir, "vocab.pth")
 
+# output_dir set
         date_str = datetime.now().strftime("%m-%d")
         time_str = datetime.now().strftime("%H:%M:%S")
-        self.job_name = time_str + "-" + args.job_name
-        self.output_dir = path.join(self.output_dir, date_str, self.job_name)
+        self.job_name = time_str + "-" + args.job_name # parser.add_argument('--job_name', type=str, default="")
+        self.output_dir = path.join(self.output_dir, date_str, self.job_name, f"-{args.dataset}-{args.method}")
 
         self.model_save_dir = path.join(self.output_dir, "ckpt")
         if args.model_dir is not None:
@@ -102,7 +136,7 @@ class Paths:
             self.generate_path = path.join(args.model_dir, args.generate_path+".smiles")
             self.benchmark_path = path.join(args.model_dir, args.generate_path+".json")
         
-        self.tensorboard_dir = path.join(args.tensorboard_dir, date_str, self.job_name)
+        self.tensorboard_dir = path.join(args.tensorboard_dir, date_str, self.job_name, f"-{args.dataset}-{args.method}")
 
 @dataclass
 class ModelParams:
@@ -131,7 +165,15 @@ class ModelParams:
         self.pooling = args.pooling
         self.dropout = args.dropout
         self.num_props = 4
-        self.vocab_processed_path = path.join(args.preprocess_dir, args.dataset, f"num_ops_{args.num_operations}", "vocab.pth")
+        # preprocess_dir set
+        self.vocab_processed_path = path.join(args.preprocess_dir)
+        self.vocab_processed_path = path.join(self.vocab_processed_path, args.dataset) # by dataset
+        self.vocab_processed_path = path.join(self.vocab_processed_path, f"{args.method}") # by method
+        if args.method == "frequency_based_only":
+            self.vocab_processed_path = path.join(self.vocab_processed_path, f"num_ops_{args.num_operations}")
+        if args.method == "ensemble":
+            self.vocab_processed_path = path.join(self.vocab_processed_path, f"ensemble_with_num_ops_{args.num_operations}_freq_based")
+        self.vocab_processed_path = path.join(self.vocab_processed_path, "vocab.pth")
 
     def __repr__(self) -> str:
         return f"""
