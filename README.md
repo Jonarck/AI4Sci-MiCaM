@@ -1,6 +1,6 @@
 # MiCaM: De Novo Molecular Generation via Connection-aware Motif Mining
 
-This is the code of paper **De Novo Molecular Generation via Connection-aware Motif Mining**. *Zijie Geng, Shufang Xie, Yingce Xia, Lijun Wu, Tao Qin, Jie Wang, Yongdong Zhang, Feng Wu, Tie-Yan Liu.* ICLR 2023. [[arXiv](https://arxiv.org/pdf/2302.01129.pdf)]
+JIANG Zhuoyang's independent project.
 
 ## Environment
 - Python 3.7
